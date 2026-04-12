@@ -1,0 +1,19 @@
+REST API Design Principles
+
+REST (Representational State Transfer) is an architectural style for building web APIs. A well-designed REST API is intuitive, consistent, and easy for clients to consume. Following established conventions reduces friction and makes your API predictable.
+
+Use HTTP methods correctly. GET retrieves resources and must be idempotent — calling it multiple times should not change server state. POST creates new resources. PUT replaces a resource entirely. PATCH partially updates a resource. DELETE removes a resource. Misusing methods (e.g., using GET to delete data) breaks client expectations and caching behavior.
+
+Design around resources, not actions. URLs should represent nouns (things), not verbs (actions). Use /api/contacts to represent the collection of contacts, and /api/contacts/42 to represent a specific contact. Avoid URLs like /api/getContact or /api/deleteUser — the HTTP method already carries the action.
+
+Use consistent and meaningful status codes. 200 OK for successful GET, PUT, PATCH. 201 Created when a POST creates a new resource. 204 No Content for successful DELETE. 400 Bad Request for malformed input. 401 Unauthorized when authentication is missing or invalid. 403 Forbidden when authenticated but not authorized. 404 Not Found when the resource doesn't exist. 500 Internal Server Error for unexpected failures.
+
+Version your API. Prefix routes with a version number like /api/v1/ to allow breaking changes without disrupting existing clients. Communicate deprecations clearly before removing endpoints.
+
+Return consistent JSON structures. Always return JSON with predictable field names. For collections, return an array or an object with a data key. For errors, include an error field with a human-readable message. Avoid returning different shapes for success vs. error responses.
+
+Support filtering, sorting, and pagination. For list endpoints, allow clients to filter results with query parameters (e.g., ?status=active), sort results (?sort=created_at), and paginate large result sets (?page=2&limit=20). Return pagination metadata so clients know how many total results exist.
+
+Handle errors gracefully. Never expose internal error details (stack traces, database errors) to API clients. Log the full error server-side, but return a sanitized message to the client. Include an error code that clients can programmatically check.
+
+Use HTTPS everywhere. Never serve an API over plain HTTP in production. Configure HSTS headers to enforce secure connections.

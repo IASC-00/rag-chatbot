@@ -1,0 +1,19 @@
+Python Web Development Best Practices
+
+Python is one of the most popular languages for web development due to its readability, large ecosystem, and powerful frameworks. When building web applications in Python, several best practices lead to more maintainable, scalable, and secure code.
+
+Use a framework that fits your scale. Flask is ideal for lightweight APIs and microservices — it gives you routing, request handling, and templating with minimal overhead. Django is better for larger applications that need an ORM, admin panel, and built-in authentication out of the box. FastAPI is excellent for high-performance APIs with automatic OpenAPI documentation and async support.
+
+Structure your project for clarity. Separate concerns by placing database models, route handlers, business logic, and utility functions in distinct modules. Avoid putting all code in a single file as the project grows. Use blueprints (Flask) or apps (Django) to organize routes by feature.
+
+Manage dependencies explicitly. Use a requirements.txt or pyproject.toml to pin your dependencies. Never rely on globally installed packages in production. Use virtual environments to isolate project dependencies and prevent version conflicts between projects.
+
+Handle configuration through environment variables, not hardcoded values. Use a library like python-dotenv to load .env files in development. Never commit secrets, API keys, or database credentials to version control.
+
+Validate all user input. Never trust data coming from HTTP requests. Use schema validation libraries like Pydantic, marshmallow, or WTForms to enforce data shapes and sanitize inputs before using them in business logic or database queries.
+
+Use proper error handling. Return meaningful HTTP status codes. Use try/except blocks around external calls (databases, third-party APIs). Log errors with context, not just the exception message.
+
+Write tests. Unit test your business logic in isolation. Integration test your API endpoints using a test client. Use pytest as the test runner and aim for coverage on your critical paths.
+
+Secure your application. Protect against SQL injection by using parameterized queries or an ORM. Prevent CSRF in form-based apps. Set secure cookie flags. Rate-limit authentication endpoints. Keep dependencies updated to patch known vulnerabilities.

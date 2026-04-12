@@ -1,0 +1,17 @@
+Database Indexing and Query Optimization
+
+Databases are often the bottleneck in web applications. Understanding how indexing works and how to write efficient queries can make the difference between a page loading in 50ms and one that times out under load.
+
+What indexes do. An index is a data structure (usually a B-tree) that the database maintains alongside your table to speed up lookups. Without an index, a query like SELECT * FROM contacts WHERE email = 'alice@example.com' requires a full table scan — reading every row to find matches. With an index on the email column, the database can jump directly to the matching rows. Indexes trade write speed and storage space for faster reads.
+
+When to add indexes. Add indexes on columns you frequently filter by in WHERE clauses. Add indexes on columns used in JOIN conditions. Add indexes on columns you frequently sort by in ORDER BY. Avoid indexing columns with very low cardinality — the full scan can be faster. Avoid over-indexing — every index slows down INSERT, UPDATE, and DELETE because the index must be updated.
+
+Composite indexes. A composite index covers multiple columns. An index on (last_name, first_name) speeds up queries that filter by last_name alone, or by both last_name and first_name together. It does not speed up queries that filter only on first_name. The column order in a composite index matters — put the most selective column first.
+
+The N+1 problem. A common performance bug occurs when fetching a list of records and then querying the database once per record. Fetching 100 contacts and making 100 separate queries to fetch notes results in 101 queries. Fix: use a JOIN or WHERE contact_id IN (...) to fetch all notes in one query.
+
+Use EXPLAIN. Most databases support EXPLAIN (or EXPLAIN ANALYZE in PostgreSQL) to show the query execution plan — whether the query uses an index or falls back to a sequential scan.
+
+Pagination with OFFSET is slow on large tables. Use keyset pagination — track the last seen ID and query WHERE id > :last_id LIMIT 20. This is O(log n) instead of O(n).
+
+Connection pooling. Opening a new database connection for every request is expensive. Use a connection pool (PgBouncer, SQLAlchemy pool) to reuse connections across requests.
