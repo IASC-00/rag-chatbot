@@ -1,30 +1,44 @@
 # RAG Knowledge Base Chatbot
 
-Document Q&A with semantic search and source citations. Ask questions, get answers grounded in your documents.
+End-to-end RAG pipeline — ingest documents, embed locally with ONNX, retrieve semantically, synthesise answers with source citations. No external embedding API required.
 
-**Stack**: Python · Flask · ChromaDB (local ONNX embeddings) · OpenRouter free LLM
+**Live demo**: [rag-chatbot-4n44.onrender.com](https://rag-chatbot-4n44.onrender.com)
+
+**Stack**: Python · Flask · ChromaDB · all-MiniLM-L6-v2 (ONNX) · OpenRouter
+
+---
+
+## Features
+
+- Local ONNX embeddings — no OpenAI embedding API, runs offline
+- ChromaDB vector store with persistent storage
+- Multi-model LLM fallback chain handles OpenRouter rate limits
+- Source citations returned with every answer
+- `/ingest` endpoint to reload documents without restarting
 
 ## Setup
 
 ```bash
 pip install -r requirements.txt
-cp .env.example .env  # add OPENROUTER_API_KEY
-python3 ingest.py     # load docs from docs/ into ChromaDB
-python3 app.py        # start API on :5050
-```
-
-## API
-
-```
-POST /chat    { "query": "your question" }  →  { "query": "...", "response": { "answer": "...", "sources": [...] } }
-POST /ingest  →  re-run ingest pipeline
-GET  /health  →  { "ok": true }
+cp .env.example .env   # add OPENROUTER_API_KEY
+python3 ingest.py      # chunk + embed docs from docs/
+python3 app.py         # API on :5050
 ```
 
 ## How it works
 
-1. `ingest.py` chunks `.txt` files from `docs/` (500 chars, 50 overlap), embeds with `all-MiniLM-L6-v2`, stores in ChromaDB
-2. `query.py` embeds the question, retrieves top-3 chunks, builds a grounded prompt, calls the LLM
-3. LLM synthesises an answer citing source files
+1. `ingest.py` chunks `.txt` files from `docs/` (500 chars, 50 char overlap), embeds with `all-MiniLM-L6-v2`, stores vectors in ChromaDB
+2. On query: embed the question, retrieve top-3 chunks by cosine similarity, build a grounded prompt
+3. LLM synthesises an answer and cites the source files
 
-**Live demo**: [link]
+## API
+
+```
+POST /chat    { "query": "your question" }
+POST /ingest  re-run the ingest pipeline
+GET  /health
+```
+
+---
+
+[iswain.dev](https://iswain.dev)
