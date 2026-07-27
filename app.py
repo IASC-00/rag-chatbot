@@ -1,12 +1,17 @@
+import hmac
+import logging
 import os
-from flask import Flask, request, jsonify, send_from_directory
-from query import pipe
-from ingest import ingest as run_ingest
+
 from dotenv import load_dotenv
+from flask import Flask, jsonify, request, send_from_directory
+
+from ingest import ingest as run_ingest
+from query import pipe
 
 load_dotenv()
 
 app = Flask(__name__)
+log = logging.getLogger(__name__)
 
 
 @app.route("/")
@@ -16,10 +21,7 @@ def index():
 
 @app.route("/chat", methods=["POST"])
 def chat():
-    """
-    POST /chat - Ask a question to the RAG pipeline.
-    Expects json: {"query": "how does X work?"}
-    """
+    """POST /chat — ask the RAG pipeline. Body: {"query": "..."}"""
     data = request.json
     if not data or "query" not in data:
         return jsonify({"error": "Missing 'query' in request body"}), 400
@@ -28,18 +30,26 @@ def chat():
     try:
         response = pipe(query_text)
         return jsonify({"query": query_text, "response": response}), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        # Detail stays in the server log; the caller gets nothing internal.
+        log.exception("chat failed")
+        return jsonify({"error": "Internal error"}), 500
 
 
 @app.route("/ingest", methods=["POST"])
 def trigger_ingest():
-    """POST /ingest - Re-run the ingest pipeline (useful for demos)."""
+    """POST /ingest — rebuild the stores. Requires the X-Ingest-Token header."""
+    expected = os.environ.get("INGEST_TOKEN", "")
+    if not expected:
+        return jsonify({"error": "Ingest is disabled"}), 503
+    if not hmac.compare_digest(request.headers.get("X-Ingest-Token", ""), expected):
+        return jsonify({"error": "Unauthorized"}), 401
+
     try:
-        run_ingest()
-        return jsonify({"status": "ok"}), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"status": "ok", **run_ingest()}), 200
+    except Exception:
+        log.exception("ingest failed")
+        return jsonify({"error": "Internal error"}), 500
 
 
 @app.route("/health")
@@ -49,4 +59,5 @@ def health():
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5050))
-    app.run(debug=True, port=port)
+    debug = os.environ.get("FLASK_DEBUG", "").lower() in ("1", "true", "yes")
+    app.run(debug=debug, port=port)
