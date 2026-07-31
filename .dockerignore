@@ -1,0 +1,17 @@
+# Keep secrets and local state OUT of the built image.
+# The Dockerfile does "COPY . ." — without this, .env (which holds a live API
+# key) is baked into every layer. Verified on 2026-07-31: the file was present
+# at /app/.env inside the running container on the VPS.
+# The key now reaches the app at RUNTIME via docker-compose env_file, so it
+# stays on the host and never enters an image layer.
+.env
+.env.*
+!.env.example
+.git
+.venv
+__pycache__/
+*.pyc
+.chroma/
+tests/
+eval/
+.pytest_cache/
