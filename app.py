@@ -14,6 +14,20 @@ app = Flask(__name__)
 log = logging.getLogger(__name__)
 
 
+def _const_eq(a: str, b: str) -> bool:
+    """Constant-time comparison that tolerates non-ASCII input.
+
+    `hmac.compare_digest` raises TypeError on a str containing non-ASCII. The
+    value compared below is a request header, so it is attacker-controlled: one
+    accented character turned an unauthorized ingest attempt into an unhandled
+    500 rather than a clean 401. Encoding to bytes first accepts any input and
+    keeps the timing property.
+    """
+    return hmac.compare_digest(
+        a.encode("utf-8", "surrogateescape"), b.encode("utf-8", "surrogateescape")
+    )
+
+
 @app.route("/")
 def index():
     return send_from_directory("static", "index.html")
@@ -42,7 +56,7 @@ def trigger_ingest():
     expected = os.environ.get("INGEST_TOKEN", "")
     if not expected:
         return jsonify({"error": "Ingest is disabled"}), 503
-    if not hmac.compare_digest(request.headers.get("X-Ingest-Token", ""), expected):
+    if not _const_eq(request.headers.get("X-Ingest-Token", ""), expected):
         return jsonify({"error": "Unauthorized"}), 401
 
     try:
