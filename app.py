@@ -7,11 +7,29 @@ from flask import Flask, jsonify, request, send_from_directory
 
 from ingest import ingest as run_ingest
 from query import pipe
+from ratelimit import RateLimiter
 
 load_dotenv()
 
 app = Flask(__name__)
 log = logging.getLogger(__name__)
+
+_CHAT_LIMITER = None
+
+
+def _env_int(name: str, default: int) -> int:
+    """Read an int from the environment; blank or malformed falls back.
+
+    `KEY=` is a common way to mean "unset" in a .env file, and a bare int() on
+    that raises at import time.
+    """
+    raw = (os.environ.get(name) or "").strip()
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return default
 
 
 def _const_eq(a: str, b: str) -> bool:
@@ -33,9 +51,39 @@ def index():
     return send_from_directory("static", "index.html")
 
 
+def _chat_limiter():
+    """Per-process limiter for /chat, built once from the environment."""
+    global _CHAT_LIMITER
+    if _CHAT_LIMITER is None:
+        _CHAT_LIMITER = RateLimiter(
+            max_requests=_env_int("CHAT_MAX_REQUESTS", 30),
+            window_seconds=_env_int("CHAT_WINDOW_SECONDS", 3600),
+        )
+    return _CHAT_LIMITER
+
+
 @app.route("/chat", methods=["POST"])
 def chat():
-    """POST /chat — ask the RAG pipeline. Body: {"query": "..."}"""
+    """POST /chat — ask the RAG pipeline. Body: {"query": "..."}
+
+    Two controls, both off-by-default-safe:
+
+    CHAT_TOKEN — when set, an X-Chat-Token header matching it is required. When
+    UNSET the endpoint is open, which is the current public-demo behaviour and
+    stays the default, so setting nothing changes nothing.
+
+    Rate limiting is always on, because every call here spends money at
+    OpenRouter and the endpoint is reachable without credentials. Defaults are
+    deliberately generous (30 requests/hour/address) so a demo visitor never
+    hits them.
+    """
+    expected = os.environ.get("CHAT_TOKEN", "")
+    if expected and not _const_eq(request.headers.get("X-Chat-Token", ""), expected):
+        return jsonify({"error": "Unauthorized"}), 401
+
+    if not _chat_limiter().allow(request.remote_addr or "unknown"):
+        return jsonify({"error": "Rate limit exceeded. Try again later."}), 429
+
     data = request.json
     if not data or "query" not in data:
         return jsonify({"error": "Missing 'query' in request body"}), 400

@@ -42,3 +42,21 @@ GET  /health
 ---
 
 [iswain.dev](https://iswain.dev)
+
+## /chat access and cost controls
+
+`/chat` calls a paid model on every request, so the endpoint has two controls.
+Setting neither preserves the open public-demo behaviour.
+
+| Variable | Default | Effect |
+|---|---|---|
+| `CHAT_TOKEN` | unset | When set, `/chat` requires a matching `X-Chat-Token` header. Unset = open, as before. |
+| `CHAT_MAX_REQUESTS` | `30` | Requests allowed per source address per window. Always enforced. |
+| `CHAT_WINDOW_SECONDS` | `3600` | Length of that window. |
+
+`/ingest` is separately gated by `INGEST_TOKEN` and is disabled (503) when unset.
+
+**Limiter scope:** in-memory and single-process — state resets on restart and it
+does not coordinate across workers. Fine for the single-process demo; a
+multi-worker deployment needs shared state. Floods distributed across many
+source addresses are not limited.
