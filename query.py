@@ -17,13 +17,25 @@ CHROMA_PATH = os.environ.get(
     "CHROMA_DB_PATH", str(Path.home() / ".rag-chatbot" / "chroma")
 )
 COLLECTION = "rag_docs"
-CHAT_MODEL = os.environ.get("CHAT_MODEL", "")
+# The OpenRouter key has no spend limit, so only ":free" slugs are ever sent unless
+# ALLOW_PAID_MODELS=1 is set on purpose. OpenRouter retires free slugs without
+# notice: on 2026-09-23 all four previous hard-coded fallbacks were gone and the
+# primary was rate-limited upstream, so every chat failed. The list now lives in
+# the environment (CHAT_FALLBACK_MODELS, comma-separated); re-check it against
+# https://openrouter.ai/api/v1/models when the demo errors.
+_ALLOW_PAID = os.environ.get("ALLOW_PAID_MODELS", "") == "1"
+_DEFAULT_FALLBACKS = "google/gemma-4-31b-it:free,nvidia/nemotron-3-super-120b-a12b:free"
 
+
+def _usable(model):
+    return bool(model) and (_ALLOW_PAID or model.endswith(":free"))
+
+
+CHAT_MODEL = os.environ.get("CHAT_MODEL", "").strip()
 _FALLBACK_MODELS = [
-    "meta-llama/llama-3.3-70b-instruct:free",
-    "arcee-ai/trinity-large-preview:free",
-    "google/gemma-3-27b-it:free",
-    "nousresearch/hermes-3-llama-3.1-405b:free",
+    m.strip()
+    for m in (os.environ.get("CHAT_FALLBACK_MODELS") or _DEFAULT_FALLBACKS).split(",")
+    if _usable(m.strip())
 ]
 TOP_K = 3
 
@@ -111,8 +123,18 @@ def call_llm(prompt):
 
     from openai import OpenAI
 
-    client = OpenAI(api_key=api_key, base_url="https://openrouter.ai/api/v1")
-    models = [CHAT_MODEL] + _FALLBACK_MODELS if CHAT_MODEL else _FALLBACK_MODELS
+    # One gunicorn worker serves every visitor, so a hung upstream call must not
+    # hold it for the SDK default of 10 minutes.
+    client = OpenAI(
+        api_key=api_key,
+        base_url="https://openrouter.ai/api/v1",
+        timeout=30.0,
+        max_retries=0,
+    )
+    primary = [CHAT_MODEL] if _usable(CHAT_MODEL) else []
+    models = primary + [m for m in _FALLBACK_MODELS if m not in primary]
+    if not models:
+        raise RuntimeError("No usable chat model configured (only ':free' slugs are allowed)")
     last_err = None
     for model in models:
         try:

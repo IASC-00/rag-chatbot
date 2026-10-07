@@ -25,7 +25,7 @@ def test_chat_failure_does_not_leak_internals(client, monkeypatch):
 
     monkeypatch.setattr(app_module, "pipe", boom)
     response = client.post("/chat", json={"query": "hi"})
-    assert response.status_code == 500
+    assert response.status_code == 503  # upstream busy, not a server bug
     assert "secret" not in response.get_data(as_text=True)
 
 

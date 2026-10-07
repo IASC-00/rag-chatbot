@@ -4,6 +4,7 @@ import os
 
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request, send_from_directory
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from ingest import ingest as run_ingest
 from query import pipe
@@ -12,7 +13,18 @@ from ratelimit import RateLimiter
 load_dotenv()
 
 app = Flask(__name__)
+# Behind Caddy every request arrives from the proxy container, so without this the
+# per-address limiter below is ONE bucket shared by every visitor. Caddy sets
+# X-Forwarded-For itself; trust exactly one hop. Set TRUST_PROXY=0 only when the
+# app is reachable directly (then a client could forge the header).
+if os.environ.get("TRUST_PROXY", "1") == "1":
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1)
+# A question is a sentence, not a file. Anything bigger is refused with 413 before
+# it is parsed.
+app.config["MAX_CONTENT_LENGTH"] = 64 * 1024
 log = logging.getLogger(__name__)
+
+MAX_QUERY_CHARS = 2000
 
 _CHAT_LIMITER = None
 
@@ -84,18 +96,25 @@ def chat():
     if not _chat_limiter().allow(request.remote_addr or "unknown"):
         return jsonify({"error": "Rate limit exceeded. Try again later."}), 429
 
-    data = request.json
-    if not data or "query" not in data:
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or "query" not in data:
         return jsonify({"error": "Missing 'query' in request body"}), 400
 
     query_text = data["query"]
+    # A number or list here used to reach Chroma and come back as a 500.
+    if not isinstance(query_text, str) or not query_text.strip():
+        return jsonify({"error": "'query' must be a non-empty string"}), 400
+    if len(query_text) > MAX_QUERY_CHARS:
+        return jsonify({"error": f"Question is too long ({MAX_QUERY_CHARS} characters max)."}), 400
     try:
         response = pipe(query_text)
         return jsonify({"query": query_text, "response": response}), 200
     except Exception:
-        # Detail stays in the server log; the caller gets nothing internal.
+        # Detail stays in the server log; the caller gets nothing internal. In
+        # practice this is the upstream model being busy or withdrawn, so say so.
         log.exception("chat failed")
-        return jsonify({"error": "Internal error"}), 500
+        busy = "The assistant is busy right now. Please try again in a minute."
+        return jsonify({"error": busy}), 503
 
 
 @app.route("/ingest", methods=["POST"])
