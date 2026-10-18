@@ -42,7 +42,7 @@ def ingest():
     docs = load_documents()
     if not docs:
         print("  No .txt files found in docs/")
-        return
+        return {"documents": 0, "chunks": 0}
     chunks = []
     for doc in docs:
         chunks.extend(chunk_document(doc))
@@ -63,7 +63,13 @@ def ingest():
         documents=texts,
         metadatas=metadatas,
     )
+    # Upsert alone kept chunks from files that were removed from docs/.
+    stale = sorted(set(collection.get(include=[])["ids"]) - set(ids))
+    if stale:
+        collection.delete(ids=stale)
+        print(f"  Removed {len(stale)} chunks from documents no longer in docs/.")
     print(f"  Done. {collection.count()} total chunks in store.")
+    return {"documents": len(docs), "chunks": len(chunks)}
 
 
 if __name__ == "__main__":

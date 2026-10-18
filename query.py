@@ -2,9 +2,11 @@
 RAG query pipeline.
 
 Embeddings: ChromaDB DefaultEmbeddingFunction (local ONNX, no API key needed).
-LLM synthesis: OpenRouter free tier (requires OPENROUTER_API_KEY in .env).
+LLM synthesis: Groq free tier first (GROQ_API_KEY), then OpenRouter free models
+(OPENROUTER_API_KEY). If every model is busy, the matching passages are returned as is.
 """
 
+import logging
 import os
 from pathlib import Path
 from dotenv import load_dotenv
@@ -17,6 +19,7 @@ CHROMA_PATH = os.environ.get(
     "CHROMA_DB_PATH", str(Path.home() / ".rag-chatbot" / "chroma")
 )
 COLLECTION = "rag_docs"
+log = logging.getLogger(__name__)
 # The OpenRouter key has no spend limit, so only ":free" slugs are ever sent unless
 # ALLOW_PAID_MODELS=1 is set on purpose. OpenRouter retires free slugs without
 # notice: on 2026-09-23 all four previous hard-coded fallbacks were gone and the
@@ -36,6 +39,13 @@ _FALLBACK_MODELS = [
     m.strip()
     for m in (os.environ.get("CHAT_FALLBACK_MODELS") or _DEFAULT_FALLBACKS).split(",")
     if _usable(m.strip())
+]
+# Groq's free tier (no card on the account) allows 1,000 requests a day per model,
+# checked from the server's response headers on 2026-10-18. Tried before OpenRouter,
+# whose free models stop at 50 requests a day. GROQ_MODELS overrides the list.
+_DEFAULT_GROQ = "openai/gpt-oss-20b,qwen/qwen3.8-27b,openai/gpt-oss-120b"
+GROQ_MODELS = [
+    m.strip() for m in (os.environ.get("GROQ_MODELS") or _DEFAULT_GROQ).split(",") if m.strip()
 ]
 TOP_K = 3
 
@@ -115,38 +125,67 @@ Question: {question}
 Answer:"""
 
 
+def _providers():
+    """(base_url, api_key, models) for every provider with a key, cheapest-limit first."""
+    out = []
+    groq_key = os.environ.get("GROQ_API_KEY", "")
+    if groq_key and GROQ_MODELS:
+        out.append(("https://api.groq.com/openai/v1", groq_key, GROQ_MODELS))
+    or_key = os.environ.get("OPENROUTER_API_KEY", "")
+    if or_key:
+        primary = [CHAT_MODEL] if _usable(CHAT_MODEL) else []
+        models = primary + [m for m in _FALLBACK_MODELS if m not in primary]
+        if models:
+            out.append(("https://openrouter.ai/api/v1", or_key, models))
+    return out
+
+
 def call_llm(prompt):
-    """Call OpenRouter chat completion, trying fallback models on rate-limit. Returns the answer string."""
-    api_key = os.environ.get("OPENROUTER_API_KEY", "")
-    if not api_key:
-        return "[No OPENROUTER_API_KEY set — add it to .env to enable LLM synthesis]"
+    """Ask each configured model in turn until one answers. Returns the answer string."""
+    providers = _providers()
+    if not providers:
+        raise RuntimeError("No usable chat model configured (GROQ_API_KEY, or OPENROUTER_API_KEY + :free)")
 
     from openai import OpenAI
 
-    # One gunicorn worker serves every visitor, so a hung upstream call must not
-    # hold it for the SDK default of 10 minutes.
-    client = OpenAI(
-        api_key=api_key,
-        base_url="https://openrouter.ai/api/v1",
-        timeout=30.0,
-        max_retries=0,
-    )
-    primary = [CHAT_MODEL] if _usable(CHAT_MODEL) else []
-    models = primary + [m for m in _FALLBACK_MODELS if m not in primary]
-    if not models:
-        raise RuntimeError("No usable chat model configured (only ':free' slugs are allowed)")
     last_err = None
-    for model in models:
-        try:
-            response = client.chat.completions.create(
-                model=model,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=512,
-            )
-            return response.choices[0].message.content.strip()
-        except Exception as e:
-            last_err = e
+    for base_url, api_key, models in providers:
+        # One gunicorn worker serves every visitor, so a hung upstream call must not
+        # hold it for the SDK default of 10 minutes.
+        client = OpenAI(api_key=api_key, base_url=base_url, timeout=30.0, max_retries=0)
+        for model in models:
+            extra = {"reasoning_effort": "low"} if model.startswith("openai/gpt-oss") else {}
+            try:
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=700,
+                    extra_body=extra or None,
+                )
+                text = (response.choices[0].message.content or "").strip()
+                if text:
+                    return text
+                last_err = RuntimeError(f"{model} returned an empty answer")
+            except Exception as e:
+                last_err = e
     raise last_err
+
+
+BUSY_PREFIX = (
+    "The AI part is busy right now, so here are the passages from the documents"
+    " that best match your question:"
+)
+
+
+def passages_answer(context_chunks):
+    """What a visitor gets when every model is busy: the matching passages, verbatim."""
+    if not context_chunks:
+        return (
+            "The AI part is busy right now and nothing in the documents matched that question."
+            " Try again in a minute."
+        )
+    parts = [f"From {c['source']}:\n{c['text'].strip()}" for c in context_chunks]
+    return BUSY_PREFIX + "\n\n" + "\n\n".join(parts)
 
 
 def answer(question, context_chunks=None):
@@ -157,9 +196,12 @@ def answer(question, context_chunks=None):
     if context_chunks is None:
         context_chunks = retrieve(question)
     prompt = build_prompt(question, context_chunks)
-    text = call_llm(prompt)
-    sources = list({c["source"] for c in context_chunks})
-    return {"answer": text, "sources": sources}
+    sources = sorted({c["source"] for c in context_chunks})
+    try:
+        return {"answer": call_llm(prompt), "sources": sources}
+    except Exception:
+        log.exception("every chat model failed; answering with the passages")
+        return {"answer": passages_answer(context_chunks), "sources": sources, "fallback": True}
 
 
 def pipe(question):

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RAG Knowledge Base Chat</title>
+    <title>Ask your documents · iswain.dev demo</title>
     <style>
         :root {
             --bg: #0d0d0d;
@@ -149,6 +149,14 @@
         ::-webkit-scrollbar-thumb {
             background: #333;
         }
+        .examples { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.9rem; }
+        .example {
+            background: transparent; color: inherit; border: 1px solid #444; border-radius: 4px;
+            padding: 0.45rem 0.7rem; font: inherit; font-size: 0.85em; cursor: pointer; text-align: left;
+        }
+        .example:hover, .example:focus-visible { border-color: var(--accent); outline: none; }
+        .back { margin-top: 0.9rem; font-size: 0.8em; opacity: 0.7; }
+        .back a { color: inherit; }
         ::-webkit-scrollbar-thumb:hover {
             background: #444;
         }
@@ -156,12 +164,21 @@
 </head>
 <body>
     <header>
-        <h1>DOCUMENT KNOWLEDGE BASE</h1>
+        <h1>ASK YOUR DOCUMENTS</h1>
     </header>
 
     <main id="chat-container">
         <div class="message assistant-message">
-            Ask anything about the knowledge base.
+            I only answer from three documents for a made-up bakery: a staff handbook, its customer
+            policies, and an opening and closing checklist. If the answer isn't in them, I'll say so.
+            Ask me something, or try one of these:
+            <div class="examples">
+                <button type="button" class="example">How much notice do custom cakes need?</button>
+                <button type="button" class="example">What do I do if I'm sick?</button>
+                <button type="button" class="example">What temperature should the fridges be?</button>
+                <button type="button" class="example">Can I get a refund on a cake I already picked up?</button>
+            </div>
+            <div class="back">A demo by <a href="https://iswain.dev/?ref=rag-demo">iswain.dev</a></div>
         </div>
     </main>
 
@@ -201,6 +218,12 @@
             chatContainer.appendChild(msgDiv);
             chatContainer.scrollTop = chatContainer.scrollHeight;
         }
+
+        document.querySelectorAll('.example').forEach(btn => btn.addEventListener('click', () => {
+            if (queryInput.disabled) return;
+            queryInput.value = btn.textContent;
+            chatForm.requestSubmit();
+        }));
 
         chatForm.addEventListener('submit', async (e) => {
             e.preventDefault();
