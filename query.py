@@ -115,7 +115,8 @@ def build_prompt(question, context_chunks):
     )
     return f"""You are a helpful assistant. Answer the question using ONLY the context provided below.
 If the answer is not in the context, say "I don't have information about that in my knowledge base."
-Always cite the source file(s) you used at the end of your answer.
+Write plain sentences with no markdown (no asterisks, headings or bullets); the page shows text as is.
+End with "Source:" and the file name(s) you used.
 
 Context:
 {context}
