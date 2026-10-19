@@ -129,6 +129,9 @@ Answer:"""
 def _providers():
     """(base_url, api_key, models) for every provider with a key, cheapest-limit first."""
     out = []
+    # Groq model names carry no ":free" marker, so nothing here can tell a free call from a
+    # billed one. The guard is the account: it has no card, so it cannot be billed. Never add
+    # one to the account this key belongs to; use ALLOW_PAID_MODELS-style gating first.
     groq_key = os.environ.get("GROQ_API_KEY", "")
     if groq_key and GROQ_MODELS:
         out.append(("https://api.groq.com/openai/v1", groq_key, GROQ_MODELS))
@@ -178,8 +181,14 @@ BUSY_PREFIX = (
 )
 
 
+# Distance above which a passage is too far off to show on its own. Measured on the
+# bakery docs (2026-10-18): real questions 0.82-1.57, unrelated ones 1.75-1.83.
+FALLBACK_MAX_DISTANCE = 1.7
+
+
 def passages_answer(context_chunks):
     """What a visitor gets when every model is busy: the matching passages, verbatim."""
+    context_chunks = [c for c in context_chunks if c.get("distance", 0) <= FALLBACK_MAX_DISTANCE]
     if not context_chunks:
         return (
             "The AI part is busy right now and nothing in the documents matched that question."

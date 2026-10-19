@@ -42,11 +42,18 @@ def ingest():
     docs = load_documents()
     if not docs:
         print("  No .txt files found in docs/")
-        return {"documents": 0, "chunks": 0}
     chunks = []
     for doc in docs:
         chunks.extend(chunk_document(doc))
     print(f"  {len(docs)} documents → {len(chunks)} chunks")
+
+    collection = get_collection()
+    if not chunks:
+        # Still clear out what was there, or removed documents keep answering.
+        old = collection.get(include=[])["ids"]
+        if old:
+            collection.delete(ids=old)
+        return {"documents": 0, "chunks": 0}
 
     texts = [c["text"] for c in chunks]
     sources = [c["source"] for c in chunks]
@@ -56,7 +63,6 @@ def ingest():
 
     print("Embedding and storing in ChromaDB...")
     embeddings = embed_texts(texts)
-    collection = get_collection()
     collection.upsert(
         ids=ids,
         embeddings=embeddings,

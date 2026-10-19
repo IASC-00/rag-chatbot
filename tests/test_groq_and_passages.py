@@ -94,6 +94,12 @@ def test_a_working_model_is_not_marked_fallback(keys, monkeypatch):
     assert out == {"answer": "Seven days.", "sources": ["orders.txt", "policies.txt"]}
 
 
+def test_all_busy_and_only_far_off_passages(keys, monkeypatch):
+    fake_openai(monkeypatch, {})
+    far = [{"text": "Bake at 400.", "source": "x.txt", "distance": 1.8}]
+    assert "nothing in the documents matched" in query.answer("capital of France?", far)["answer"]
+
+
 def test_all_busy_and_nothing_matched(keys, monkeypatch):
     fake_openai(monkeypatch, {})
     assert "nothing in the documents matched" in query.answer("x", [])["answer"]
