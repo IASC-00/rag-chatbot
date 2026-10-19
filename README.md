@@ -60,3 +60,8 @@ Setting neither preserves the open public-demo behaviour.
 does not coordinate across workers. Fine for the single-process demo; a
 multi-worker deployment needs shared state. Floods distributed across many
 source addresses are not limited.
+
+## Known advisories (checked 2026-10-18)
+`pip-audit` reports PYSEC-2026-311, -3813, -3814 and -3815 against chromadb 1.5.9, with no fixed release yet. All four concern the Chroma *server* (its HTTP API, `trust_remote_code` model loading and the RBAC auth provider). This app runs Chroma in-process (`PersistentClient`) with the fixed default embedding function and exposes no Chroma server, so none of them is reachable here. Re-check when a fixed chromadb ships.
+
+The chat models on Groq have no `:free` marker, so nothing in code can tell a free call from a billed one: the account behind `GROQ_API_KEY` must stay without a card.
